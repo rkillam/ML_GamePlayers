@@ -11,6 +11,7 @@ Options:
 """
 
 
+import abc
 import numpy as np
 import re
 import string
@@ -65,14 +66,25 @@ class Board(object):
                [ 0.,  0.,  0.],
                [ 0.,  0.,  2.]])
         >>> board[:, 1] = 3
-        >>> board.board
-        array([[ 1.,  3.,  0.],
-               [ 0.,  3.,  0.],
-               [ 0.,  3.,  2.]])
+        Traceback (most recent call last):
+            ...
+        InvalidMove: Type Board does not support (slice(None, None, None), 1) as an index
+        >>> board[0, 0] = 2
+        Traceback (most recent call last):
+            ...
+        InvalidMove: Cell (0, 0) already taken
         """
 
-        r, c = index
-        self.board[r, c] = val
+        try:
+            if not bool(self.board[index]):
+                self.board[index] = val
+            else:
+                raise InvalidMove('Cell {} already taken'.format(index))
+        except ValueError:
+            raise InvalidMove('Type {} does not support {} as an index'.format(
+                self.__class__.__name__,
+                index
+            ))
 
     def __getitem__(self, index):
         """Gets the value of the board at self.board[index[0], index[1]]
@@ -236,53 +248,119 @@ class Board(object):
         return str(self.board)
 
 
-def extract_ints(i_str):
-    """Extracts all of the ints contained in the given string, if there are
-    consecutive digits they are considered to be the same number
+class AbstractPlayer(object, metaclass=abc.ABCMeta):
+    """An abstract player class"""
 
-    >>> extract_ints('1, 2')
-    [1, 2]
-    >>> extract_ints('hello 10, 12')
-    [10, 12]
-    >>> extract_ints('hello 10,12')
-    [10, 12]
-    >>> extract_ints('')
-    []
-    >>> extract_ints('1')
-    [1]
-    >>> extract_ints('1.0')
-    [1, 0]
+    num_players = 0
+
+    def __init__(self):
+        AbstractPlayer.num_players += 1
+        self.name = AbstractPlayer.num_players
+
+    @abc.abstractmethod
+    def make_move(self, board):
+        """Decides what move to make given the board
+
+        @type board: numpy.ndarray
+        @param board: The tic tac toe board as it currently stands
+
+        @rtype: tuple of ints
+        @return: The cell where the human player wants to put their move
+        """
+
+    def __repr__(self):
+        return str(self.name)
+
+    def __str__(self):
+        return str(self.name)
+
+
+class InvalidMove(Exception):
+    """An exception that is caused by a player attempting to make an invalid
+    move
     """
 
-    # Get all of the numbers
-    nums = re.split(r'\D', i_str.strip())
 
-    # Convert them into ints and ignore all empty strings
-    return [int(num) for num in nums if num]
+class HumanPlayer(AbstractPlayer):
+    """A human player who enters commands through the console"""
+
+    @staticmethod
+    def extract_ints(i_str):
+        """Extracts all of the ints contained in the given string, if there are
+        consecutive digits they are considered to be the same number
+
+        @type i_str: str
+        @param i_str: A string from which the ints are to be extracted
+
+        @rtype: tuple
+        @return: A tuple of ints
+
+        >>> HumanPlayer.extract_ints('1, 2')
+        (1, 2)
+        >>> HumanPlayer.extract_ints('hello 10, 12')
+        (10, 12)
+        >>> HumanPlayer.extract_ints('hello 10,12')
+        (10, 12)
+        >>> HumanPlayer.extract_ints('')
+        ()
+        >>> HumanPlayer.extract_ints('1')
+        (1,)
+        >>> HumanPlayer.extract_ints('1.0')
+        (1, 0)
+        """
+
+        # Get all of the numbers
+        nums = re.split(r'\D', i_str.strip())
+
+        # Convert them into ints and ignore all empty strings
+        return tuple(int(num) for num in nums if num)
+
+    def make_move(self, board):
+        """Read's the human player's move from stdin, extracts the cell
+        coordinates as ints and returns them as a tuple.
+
+        @type board: numpy.ndarray
+        @param board: The tic tac toe board as it currently stands
+
+        @rtype: tuple of ints
+        @return: The cell where the human player wants to put their move
+        """
+
+        i_str = input('{}\nPlayer {}\'s turn > '.format(board, self))
+        return HumanPlayer.extract_ints(i_str)
 
 
 def main():
-    ttt_board = Board()
+    # Create the Tic Tac Toe board
+    board = Board()
 
-    players = (1, 2)
+    # Create the list of players
+    players = (HumanPlayer(), HumanPlayer())
     cur_player_index = 0
 
-    while not ttt_board.is_won:
+    while not board.is_won:
         try:
+            # Get the current player
             cur_player = players[cur_player_index]
 
-            i_str = input('{}\nPlayer {}\'s turn > '.format(ttt_board, cur_player))
-            r, c = extract_ints(i_str)
+            # Get the player's move choice
+            r, c = cur_player.make_move(board)
 
-            ttt_board[r, c] = cur_player
+            # Make the player's move
+            board[r, c] = cur_player.name
 
+            # Change to the next player
             cur_player_index += 1
             if cur_player_index >= len(players):
                 cur_player_index = 0
-        except IndexError as e:
+
+        except (IndexError, InvalidMove) as e:
             print(e)
 
-    print('Player: {} wins'.format(ttt_board.is_won))
+        except ValueError:
+            print('Invalid input')
+
+    print('Player: {} wins'.format(board.is_won))
 
 
 if __name__ == '__main__':
