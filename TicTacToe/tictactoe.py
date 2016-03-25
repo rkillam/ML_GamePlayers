@@ -4,10 +4,12 @@
 """Play tic tac toe
 
 Usage:
-    tictactoe.py [-t | --test]
+    tictactoe.py [-t | --test] [-v | --verbose] [--size=<SIZE>]
 
 Options:
-    -t --test  Run unit tests
+    -t --test       Run unit tests
+    -v --verbose    Print all output
+    --size=<SIZE>   The size of the tic tac toe board [default: 3]
 """
 
 
@@ -15,6 +17,8 @@ import abc
 import numpy as np
 import re
 import string
+
+import neural_network as nn
 
 
 # TODO: Have Board inherit from np.ndarray
@@ -24,6 +28,21 @@ class Board(object):
     def __init__(self, size=3):
         self.size = size
         self.board = np.zeros((size, size))
+
+    @property
+    def num_cells(self):
+        """Returns the number of cells in the tic tac toe board
+
+        @rtype: int
+        @return: The number of cells in the tic tac toe board
+
+        >>> Board().num_cells
+        9
+        >>> Board(size=5).num_cells
+        25
+        """
+
+        return self.size * self.size
 
     @property
     def shape(self):
@@ -243,6 +262,26 @@ class Board(object):
 
         return won
 
+    def get_random_empty_cell(self):
+        """Returns a random cell that has not been claimed by a player
+        """
+
+        if self.is_full:
+            raise Exception('There are no empty cells')
+
+        # Get the indices of all of the empty cells as a tuple of ndarrays for
+        # each dimension
+        options = np.where(self.board == 0)
+
+        # Stack the index components and then transpose the matrix so that the
+        # indices are held in rows
+        options = np.vstack(options).T
+
+        # Randomly choose an empty cell
+        choice = np.random.randint(0, options.shape[0])
+
+        return options[choice]
+
 
     def __str__(self):
         return str(self.board)
@@ -253,9 +292,13 @@ class AbstractPlayer(object, metaclass=abc.ABCMeta):
 
     num_players = 0
 
-    def __init__(self):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.name = kwargs.get('name', 'Player')
+
         AbstractPlayer.num_players += 1
-        self.name = AbstractPlayer.num_players
+        self.num = AbstractPlayer.num_players
 
     @abc.abstractmethod
     def make_move(self, board):
@@ -269,10 +312,10 @@ class AbstractPlayer(object, metaclass=abc.ABCMeta):
         """
 
     def __repr__(self):
-        return str(self.name)
+        return str(self.num)
 
     def __str__(self):
-        return str(self.name)
+        return str(self.num)
 
 
 class InvalidMove(Exception):
@@ -330,15 +373,33 @@ class HumanPlayer(AbstractPlayer):
         return HumanPlayer.extract_ints(i_str)
 
 
-def main():
+class NNPlayer(AbstractPlayer, nn.NeuralNetwork):
+    """A player that makes its decisions based on a neural network"""
+
+    def make_move(self, board):
+        """Checks to see if there is a winning move, if so then it takes it,
+        finally it will take a random cell
+        """
+
+        outputs = super().feed_forward(board.board.flatten())
+
+        # Get the row and column indices from the largest cell number
+        cell_num = outputs[-1].argmax()
+        r = cell_num // board.size
+        c = cell_num % board.size
+
+        return r, c
+
+def main(kwargs):
     # Create the Tic Tac Toe board
-    board = Board()
+    board = Board(int(kwargs['--size']))
+    nn_dims = (board.num_cells, board.num_cells*2, board.num_cells)
 
     # Create the list of players
-    players = (HumanPlayer(), HumanPlayer())
+    players = (NNPlayer(dims=nn_dims), NNPlayer(dims=nn_dims))
     cur_player_index = 0
 
-    while not board.is_won:
+    while not board.is_won and not board.is_full:
         try:
             # Get the current player
             cur_player = players[cur_player_index]
@@ -347,20 +408,23 @@ def main():
             r, c = cur_player.make_move(board)
 
             # Make the player's move
-            board[r, c] = cur_player.name
+            board[r, c] = cur_player.num
 
+        except (ValueError, IndexError, InvalidMove) as e:
+            print(e)
+
+            r, c = board.get_random_empty_cell()
+            board[r, c] = cur_player.num
+
+            print('Making random move to ({}, {})'.format(r, c))
+
+        finally:
             # Change to the next player
             cur_player_index += 1
             if cur_player_index >= len(players):
                 cur_player_index = 0
 
-        except (IndexError, InvalidMove) as e:
-            print(e)
-
-        except ValueError:
-            print('Invalid input')
-
-    print('Player: {} wins'.format(board.is_won))
+    print('\n\n{}\nPlayer: {} wins'.format(board, board.is_won))
 
 
 if __name__ == '__main__':
@@ -370,7 +434,7 @@ if __name__ == '__main__':
     args = docopt.docopt(__doc__)
 
     if args['--test']:
-        doctest.testmod()
+        doctest.testmod(verbose=args['--verbose'])
 
     else:
-        main()
+        main(args)
