@@ -97,6 +97,7 @@ class SigmoidFunc(AbstractActivationFunc):
 
 class NeuralNetwork(object):
     def __init__(self, **kwargs):
+        # TODO: Add docstring comment describing args
         self.dims = kwargs['dims']
         self.activation_func = kwargs.get('activation_func', SigmoidFunc)
 

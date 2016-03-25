@@ -4,12 +4,17 @@
 """Play tic tac toe
 
 Usage:
-    tictactoe.py [-t | --test] [-v | --verbose] [--size=<SIZE>]
+    tictactoe.py -h | --help
+    tictactoe.py [-t | --test] [-v | --verbose] [--size=<SIZE>] [--p1=<P1_TYPE>] [--p2=<P2_TYPE>] [--num_rounds=<NUM_ROUNDS>]
 
 Options:
-    -t --test       Run unit tests
-    -v --verbose    Print all output
-    --size=<SIZE>   The size of the tic tac toe board [default: 3]
+    -h --help                   Show this help message
+    -t --test                   Run unit tests
+    -v --verbose                Print all output
+    --size=<SIZE>               The size of the tic tac toe board [default: 3]
+    --p1=<P1_TYPE>              The player type for player #1 (human or NN) [default: NN]
+    --p2=<P2_TYPE>              The player type for player #2 (human or NN) [default: NN]
+    --num_rounds=<NUM_ROUNDS>   The number of games that should be played [default: 3]
 """
 
 
@@ -19,6 +24,7 @@ import re
 import string
 
 import neural_network as nn
+import utils
 
 
 # TODO: Have Board inherit from np.ndarray
@@ -26,8 +32,15 @@ class Board(object):
     """A tic tac toe board"""
 
     def __init__(self, size=3):
+        # TODO: Add docstring comment describing args
+        # TODO: Switch to kwargs
         self.size = size
-        self.board = np.zeros((size, size))
+        self.reset()
+
+    def reset(self):
+        """Resets the board to empty"""
+
+        self.board = np.zeros((self.size, self.size))
 
     @property
     def num_cells(self):
@@ -264,6 +277,8 @@ class Board(object):
 
     def get_random_empty_cell(self):
         """Returns a random cell that has not been claimed by a player
+
+        TODO: unit tests
         """
 
         if self.is_full:
@@ -390,41 +405,89 @@ class NNPlayer(AbstractPlayer, nn.NeuralNetwork):
 
         return r, c
 
+
+class Game(object):
+    def __init__(self, **kwargs):
+        # TODO: Add docstring comment describing args
+        # TODO: Switch to kwargs
+        self.num_rounds = kwargs['num_rounds']
+        self.rounds_played = 0
+
+        self.board = kwargs['board']
+        self.players = kwargs['players']
+        self.score_board = [0] * len(self.players)
+
+    def play_round(self):
+        self.board.reset()
+        cur_player_index = np.random.randint(len(self.players))
+
+        while not self.board.is_won and not self.board.is_full:
+            try:
+                # Get the current player
+                cur_player = self.players[cur_player_index]
+
+                # Get the player's move choice
+                r, c = cur_player.make_move(self.board)
+
+                # Make the player's move
+                self.board[r, c] = cur_player.num
+
+            except (ValueError, IndexError, InvalidMove) as e:
+                utils.warn(
+                    '{}.play_round'.format(self.__class__.__name__),
+                    e
+                )
+
+                r, c = self.board.get_random_empty_cell()
+                self.board[r, c] = cur_player.num
+
+                utils.warn(
+                    '{}.play_round'.format(self.__class__.__name__),
+                    'Making random move to ({}, {})'.format(r, c)
+                )
+
+            finally:
+                # Change to the next player
+                cur_player_index += 1
+                if cur_player_index >= len(self.players):
+                    cur_player_index = 0
+
+        utils.info(
+            '{}.play_round'.format(self.__class__.__name__),
+            '\n\n{}\nPlayer: {} wins'.format(self.board, self.board.is_won)
+        )
+
+        self.score_board[int(self.board.is_won -1)] += 1
+        self.rounds_played += 1
+
+    def play(self):
+        while self.rounds_played < self.num_rounds:
+            self.play_round()
+
 def main(kwargs):
+    if kwargs['--verbose']:
+        utils.set_log_level(utils.DEBUG)
+
     # Create the Tic Tac Toe board
     board = Board(int(kwargs['--size']))
     nn_dims = (board.num_cells, board.num_cells*2, board.num_cells)
 
+    # TODO: Clean up player creation
     # Create the list of players
-    players = (NNPlayer(dims=nn_dims), NNPlayer(dims=nn_dims))
-    cur_player_index = 0
+    if kwargs['--p1'] == 'human':
+        p1 = HumanPlayer()
+    elif kwargs['--p1'] == 'NN':
+        p1 = NNPlayer(dims=nn_dims)
 
-    while not board.is_won and not board.is_full:
-        try:
-            # Get the current player
-            cur_player = players[cur_player_index]
+    if kwargs['--p2'] == 'human':
+        p2 = HumanPlayer()
+    elif kwargs['--p2'] == 'NN':
+        p2 = NNPlayer(dims=nn_dims)
 
-            # Get the player's move choice
-            r, c = cur_player.make_move(board)
+    game = Game(board=board, players=(p1, p2), num_rounds=int(kwargs['--num_rounds']))
+    game.play()
 
-            # Make the player's move
-            board[r, c] = cur_player.num
-
-        except (ValueError, IndexError, InvalidMove) as e:
-            print(e)
-
-            r, c = board.get_random_empty_cell()
-            board[r, c] = cur_player.num
-
-            print('Making random move to ({}, {})'.format(r, c))
-
-        finally:
-            # Change to the next player
-            cur_player_index += 1
-            if cur_player_index >= len(players):
-                cur_player_index = 0
-
-    print('\n\n{}\nPlayer: {} wins'.format(board, board.is_won))
+    print(game.score_board)
 
 
 if __name__ == '__main__':
